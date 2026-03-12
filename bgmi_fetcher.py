@@ -189,71 +189,7 @@ def fetch_youtube() -> list[dict]:
 
 # ─── Instagram ────────────────────────────────────────────────────────────────
 
-def fetch_instagram() -> list[dict]:
-    """Scrape Instagram #BGMI posts using instaloader (no official API needed)."""
-    try:
-        import instaloader
-    except ImportError:
-        log.error("Missing dependency. Run: pip install instaloader")
-        return []
 
-    log.info("Fetching Instagram #BGMI posts …")
-    L = instaloader.Instaloader(
-        download_pictures=False,
-        download_videos=False,
-        download_video_thumbnails=False,
-        download_geotags=False,
-        download_comments=False,
-        save_metadata=False,
-        quiet=True,
-    )
-
-    # Load session if provided (avoids rate limits / login walls)
-    if INSTAGRAM_SESSION_FILE and Path(INSTAGRAM_SESSION_FILE).exists():
-        try:
-            L.load_session_from_file(username="", filename=INSTAGRAM_SESSION_FILE)
-            log.info("  Loaded Instagram session from file")
-        except Exception as e:
-            log.warning(f"  Could not load session: {e}")
-
-    rows = []
-    try:
-        hashtag = instaloader.Hashtag.from_name(L.context, HASHTAG)
-        count = 0
-        for post in hashtag.get_posts():
-            if count >= MAX_POSTS_IG:
-                break
-            count += 1
-
-            # Only video posts
-            if not post.is_video:
-                continue
-
-            views = post.video_view_count or 0
-            if views < MIN_VIEWS:
-                continue
-
-            rows.append({
-                "fetched_date":       datetime.now().strftime("%Y-%m-%d"),
-                "platform":           "Instagram",
-                "video_id":           post.shortcode,
-                "title":              (post.caption or "")[:120],
-                "channel_or_user":    post.owner_username,
-                "url":                f"https://www.instagram.com/p/{post.shortcode}/",
-                "views":              views,
-                "likes":              post.likes,
-                "comments":           post.comments,
-                "published_at":       post.date_utc.isoformat(),
-                "duration_seconds":   int(post.video_duration or 0),
-                "thumbnail_url":      post.url,
-                "description_snippet": (post.caption or "")[:200],
-            })
-
-    except Exception as e:
-        log.warning(f"Instagram fetch error (skipping): {e}")
-
-    log.info(f"  Instagram: {len(rows)} videos with >{MIN_VIEWS:,} views")
-    return rows
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
@@ -264,7 +200,6 @@ def main():
 
     all_rows = []
     all_rows.extend(fetch_youtube())
-    all_rows.extend(fetch_instagram())
 
     if not all_rows:
         log.warning("No videos fetched today. Check API keys / network.")
