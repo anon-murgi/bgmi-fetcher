@@ -250,7 +250,7 @@ def fetch_instagram() -> list[dict]:
             })
 
     except Exception as e:
-        log.error(f"Instagram fetch error: {e}")
+        log.warning(f"Instagram fetch error (skipping): {e}")
 
     log.info(f"  Instagram: {len(rows)} videos with >{MIN_VIEWS:,} views")
     return rows
@@ -268,7 +268,7 @@ def main():
 
     if not all_rows:
         log.warning("No videos fetched today. Check API keys / network.")
-        return
+        sys.exit(0)  # exit cleanly even if empty
 
     # Sort by views descending
     all_rows.sort(key=lambda r: r["views"], reverse=True)
