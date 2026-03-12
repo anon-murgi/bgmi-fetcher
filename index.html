@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BGMI · YouTube Tracker</title>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg:       #0a0b0d;
+      --surface:  #111318;
+      --border:   #1e2129;
+      --orange:   #f97316;
+      --orange2:  #fb923c;
+      --yellow:   #fbbf24;
+      --text:     #e8eaf0;
+      --muted:    #5a5f70;
+      --green:    #22c55e;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Barlow Condensed', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── noise overlay ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── scanlines ── */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.08) 2px,
+        rgba(0,0,0,0.08) 4px
+      );
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    #app { position: relative; z-index: 1; }
+
+    /* ── header ── */
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 24px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      flex-wrap: wrap;
+      background: linear-gradient(180deg, rgba(249,115,22,0.06) 0%, transparent 100%);
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .logo-icon {
+      width: 40px;
+      height: 40px;
+      background: var(--orange);
+      clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      font-weight: 900;
+      color: #000;
+      flex-shrink: 0;
+    }
+
+    .logo-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .logo-title {
+      font-size: 28px;
+      font-weight: 900;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      line-height: 1;
+      color: #fff;
+    }
+
+    .logo-sub {
+      font-size: 12px;
+      letter-spacing: 0.25em;
+      color: var(--orange);
+      text-transform: uppercase;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    #last-updated {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+    }
+
+    .live-dot {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(34,197,94,0.1);
+      border: 1px solid rgba(34,197,94,0.25);
+      padding: 4px 10px;
+      font-size: 11px;
+      letter-spacing: 0.15em;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--green);
+    }
+
+    .live-dot::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* ── stats bar ── */
+    .stats-bar {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .stat-cell {
+      padding: 20px 40px;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .stat-cell:last-child { border-right: none; }
+
+    .stat-label {
+      font-size: 11px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .stat-value {
+      font-size: 32px;
+      font-weight: 900;
+      color: var(--orange);
+      letter-spacing: -0.01em;
+      line-height: 1;
+    }
+
+    .stat-value.white { color: #fff; }
+
+    /* ── toolbar ── */
+    .toolbar {
+      padding: 16px 40px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .search-wrap {
+      position: relative;
+      flex: 1;
+      min-width: 200px;
+      max-width: 360px;
+    }
+
+    .search-wrap svg {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted);
+    }
+
+    input[type="search"] {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 9px 12px 9px 36px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input[type="search"]:focus { border-color: var(--orange); }
+    input[type="search"]::placeholder { color: var(--muted); }
+
+    select {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 9px 14px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      outline: none;
+      cursor: pointer;
+      appearance: none;
+      -webkit-appearance: none;
+      padding-right: 28px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235a5f70' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 8px center;
+      transition: border-color 0.15s;
+    }
+
+    select:focus { border-color: var(--orange); }
+
+    .count-badge {
+      margin-left: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+    }
+
+    .count-badge span { color: var(--orange); font-weight: 600; }
+
+    /* ── grid ── */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 1px;
+      background: var(--border);
+      padding: 0;
+    }
+
+    /* ── card ── */
+    .card {
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      opacity: 0;
+      transform: translateY(16px);
+      animation: fadeUp 0.4s forwards;
+      transition: background 0.15s;
+      cursor: pointer;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .card:hover { background: #161a22; }
+
+    @keyframes fadeUp {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .thumb-wrap {
+      position: relative;
+      aspect-ratio: 16/9;
+      overflow: hidden;
+      background: #0d0f14;
+    }
+
+    .thumb-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transition: transform 0.4s ease, opacity 0.3s;
+      opacity: 0.85;
+    }
+
+    .card:hover .thumb-wrap img { transform: scale(1.04); opacity: 1; }
+
+    .thumb-placeholder {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #111520, #0d1018);
+    }
+
+    .thumb-placeholder svg { color: var(--muted); opacity: 0.4; }
+
+    .duration-badge {
+      position: absolute;
+      bottom: 8px;
+      right: 8px;
+      background: rgba(0,0,0,0.85);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      padding: 2px 6px;
+      color: #fff;
+      letter-spacing: 0.05em;
+    }
+
+    .rank-badge {
+      position: absolute;
+      top: 0;
+      left: 0;
+      background: var(--orange);
+      color: #000;
+      font-weight: 900;
+      font-size: 13px;
+      padding: 3px 9px;
+      letter-spacing: 0.05em;
+    }
+
+    .rank-badge.top3 { background: var(--yellow); }
+
+    .card-body {
+      padding: 14px 16px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.3;
+      letter-spacing: 0.01em;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      color: #fff;
+    }
+
+    .card-channel {
+      font-size: 12px;
+      color: var(--orange2);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+
+    .card-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .stat-chip {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      padding: 6px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .stat-chip-label {
+      font-size: 9px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .stat-chip-value {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      letter-spacing: -0.02em;
+    }
+
+    .stat-chip-value.highlight { color: var(--orange); }
+
+    .card-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: auto;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+    }
+
+    .card-date {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    .yt-badge {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      color: #ff4444;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* ── loading / empty ── */
+    .state-msg {
+      text-align: center;
+      padding: 80px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .state-msg .icon { font-size: 48px; opacity: 0.3; }
+
+    .state-msg p {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .state-msg small {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: var(--muted);
+      max-width: 420px;
+      line-height: 1.6;
+    }
+
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border: 2px solid var(--border);
+      border-top-color: var(--orange);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── date tab bar ── */
+    .date-tabs {
+      display: flex;
+      gap: 0;
+      padding: 0 40px;
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+    }
+
+    .date-tab {
+      padding: 12px 20px;
+      font-size: 12px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      white-space: nowrap;
+      transition: color 0.15s, border-color 0.15s;
+      font-family: 'JetBrains Mono', monospace;
+      background: none;
+      border-top: none;
+      border-left: none;
+      border-right: none;
+    }
+
+    .date-tab:hover { color: var(--text); }
+    .date-tab.active { color: var(--orange); border-bottom-color: var(--orange); }
+
+    /* ── footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 20px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    footer p {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    footer span { color: var(--orange); }
+
+    @media (max-width: 768px) {
+      header, .toolbar, .date-tabs, footer { padding-left: 16px; padding-right: 16px; }
+      .stats-bar { grid-template-columns: repeat(2, 1fr); }
+      .stat-cell { padding: 16px; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div class="logo">
+      <div class="logo-icon">B</div>
+      <div class="logo-text">
+        <span class="logo-title">BGMI Tracker</span>
+        <span class="logo-sub">YouTube · Daily Intelligence</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <span id="last-updated">Loading…</span>
+      <span class="live-dot">LIVE DATA</span>
+    </div>
+  </header>
+
+  <div class="stats-bar">
+    <div class="stat-cell">
+      <span class="stat-label">Videos Today</span>
+      <span class="stat-value white" id="stat-count">—</span>
+    </div>
+    <div class="stat-cell">
+      <span class="stat-label">Total Views</span>
+      <span class="stat-value" id="stat-views">—</span>
+    </div>
+    <div class="stat-cell">
+      <span class="stat-label">Avg Views</span>
+      <span class="stat-value" id="stat-avg">—</span>
+    </div>
+    <div class="stat-cell">
+      <span class="stat-label">Top Creator</span>
+      <span class="stat-value white" id="stat-top" style="font-size:18px; padding-top:4px;">—</span>
+    </div>
+  </div>
+
+  <div class="date-tabs" id="date-tabs"></div>
+
+  <div class="toolbar">
+    <div class="search-wrap">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input type="search" id="search" placeholder="Search titles, channels…" />
+    </div>
+    <select id="sort">
+      <option value="views">Sort: Views</option>
+      <option value="likes">Sort: Likes</option>
+      <option value="comments">Sort: Comments</option>
+      <option value="date">Sort: Date</option>
+      <option value="duration">Sort: Duration</option>
+    </select>
+    <div class="count-badge" id="count-badge"></div>
+  </div>
+
+  <div id="grid-wrap"></div>
+
+  <footer>
+    <p>BGMI YouTube Tracker · Auto-updated daily via GitHub Actions · Views &gt; <span>10,000</span></p>
+    <p id="footer-dates"></p>
+  </footer>
+
+</div>
+
+<script>
+// ── CSV parser ─────────────────────────────────────────────────────────────
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = [];
+    let cur = '', inQ = false;
+    for (let c = 0; c < lines[i].length; c++) {
+      const ch = lines[i][c];
+      if (ch === '"') { inQ = !inQ; }
+      else if (ch === ',' && !inQ) { cols.push(cur); cur = ''; }
+      else { cur += ch; }
+    }
+    cols.push(cur);
+    const obj = {};
+    headers.forEach((h, idx) => obj[h] = (cols[idx] || '').trim().replace(/^"|"$/g, ''));
+    rows.push(obj);
+  }
+  return rows;
+}
+
+// ── Formatters ─────────────────────────────────────────────────────────────
+function fmtViews(n) {
+  n = parseInt(n) || 0;
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(0) + 'K';
+  return n.toString();
+}
+
+function fmtDuration(secs) {
+  secs = parseInt(secs) || 0;
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+
+function fmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+}
+
+// ── State ──────────────────────────────────────────────────────────────────
+let allVideos = [];
+let activeDate = 'all';
+
+// ── Render ─────────────────────────────────────────────────────────────────
+function getFiltered() {
+  const q = document.getElementById('search').value.toLowerCase();
+  const sort = document.getElementById('sort').value;
+
+  let vids = allVideos.filter(v => v.platform === 'YouTube');
+  if (activeDate !== 'all') vids = vids.filter(v => v.fetched_date === activeDate);
+  if (q) vids = vids.filter(v =>
+    v.title.toLowerCase().includes(q) ||
+    v.channel_or_user.toLowerCase().includes(q)
+  );
+
+  vids.sort((a, b) => {
+    if (sort === 'views') return (parseInt(b.views)||0) - (parseInt(a.views)||0);
+    if (sort === 'likes') return (parseInt(b.likes)||0) - (parseInt(a.likes)||0);
+    if (sort === 'comments') return (parseInt(b.comments)||0) - (parseInt(a.comments)||0);
+    if (sort === 'duration') return (parseInt(b.duration_seconds)||0) - (parseInt(a.duration_seconds)||0);
+    if (sort === 'date') return new Date(b.published_at) - new Date(a.published_at);
+    return 0;
+  });
+  return vids;
+}
+
+function renderStats(vids) {
+  const total = vids.reduce((s, v) => s + (parseInt(v.views)||0), 0);
+  const avg = vids.length ? Math.round(total / vids.length) : 0;
+  const topChannel = vids.length
+    ? vids.reduce((best, v) => (parseInt(v.views)||0) > (parseInt(best.views)||0) ? v : best, vids[0]).channel_or_user
+    : '—';
+
+  document.getElementById('stat-count').textContent = vids.length;
+  document.getElementById('stat-views').textContent = fmtViews(total);
+  document.getElementById('stat-avg').textContent = fmtViews(avg);
+  document.getElementById('stat-top').textContent = topChannel.length > 16
+    ? topChannel.slice(0, 14) + '…' : topChannel;
+}
+
+function renderGrid() {
+  const vids = getFiltered();
+  const wrap = document.getElementById('grid-wrap');
+
+  document.getElementById('count-badge').innerHTML =
+    `Showing <span>${vids.length}</span> video${vids.length !== 1 ? 's' : ''}`;
+
+  renderStats(vids.length ? vids : allVideos.filter(v => v.platform === 'YouTube'));
+
+  if (!vids.length) {
+    wrap.innerHTML = `<div class="state-msg">
+      <div class="icon">🎮</div>
+      <p>No Videos Found</p>
+      <small>Try adjusting your search or check back after the next daily fetch.</small>
+    </div>`;
+    return;
+  }
+
+  wrap.innerHTML = `<div class="grid">${vids.map((v, i) => {
+    const delay = Math.min(i * 35, 600);
+    const rank = i + 1;
+    const rankClass = rank <= 3 ? 'top3' : '';
+    const thumbSrc = v.thumbnail_url
+      ? `<img src="${v.thumbnail_url}" alt="" loading="lazy" onerror="this.parentNode.innerHTML='<div class=thumb-placeholder><svg width=40 height=40 viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1\\'><polygon points=\\'5 3 19 12 5 21 5 3\\'></polygon></svg></div>'">`
+      : `<div class="thumb-placeholder"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></div>`;
+
+    return `<a class="card" href="${v.url}" target="_blank" rel="noopener" style="animation-delay:${delay}ms">
+      <div class="thumb-wrap">
+        ${thumbSrc}
+        <span class="rank-badge ${rankClass}">#${rank}</span>
+        ${v.duration_seconds > 0 ? `<span class="duration-badge">${fmtDuration(v.duration_seconds)}</span>` : ''}
+      </div>
+      <div class="card-body">
+        <div class="card-title">${v.title || 'Untitled'}</div>
+        <div class="card-channel">${v.channel_or_user || 'Unknown'}</div>
+        <div class="card-stats">
+          <div class="stat-chip">
+            <span class="stat-chip-label">Views</span>
+            <span class="stat-chip-value highlight">${fmtViews(v.views)}</span>
+          </div>
+          <div class="stat-chip">
+            <span class="stat-chip-label">Likes</span>
+            <span class="stat-chip-value">${fmtViews(v.likes)}</span>
+          </div>
+          <div class="stat-chip">
+            <span class="stat-chip-label">Comments</span>
+            <span class="stat-chip-value">${fmtViews(v.comments)}</span>
+          </div>
+        </div>
+        <div class="card-footer">
+          <span class="card-date">${fmtDate(v.published_at)}</span>
+          <span class="yt-badge">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M23.5 6.2s-.3-2-1.2-2.8c-1.1-1.2-2.4-1.2-3-1.3C16.6 2 12 2 12 2s-4.6 0-7.3.2c-.6.1-1.9.1-3 1.3C.8 4.3.5 6.2.5 6.2S.2 8.4.2 10.6v2.1c0 2.2.3 4.4.3 4.4s.3 2 1.2 2.8c1.1 1.2 2.6 1.1 3.3 1.2C7.2 21.2 12 21.2 12 21.2s4.6 0 7.3-.2c.6-.1 1.9-.1 3-1.3.9-.8 1.2-2.8 1.2-2.8s.3-2.2.3-4.4v-2c0-2.2-.3-4.4-.3-4.4zM9.7 15V8.4l8.1 3.3-8.1 3.3z"/></svg>
+            YouTube
+          </span>
+        </div>
+      </div>
+    </a>`;
+  }).join('')}</div>`;
+}
+
+function renderDateTabs() {
+  const dates = [...new Set(allVideos.filter(v => v.platform === 'YouTube').map(v => v.fetched_date))].sort().reverse();
+  const tabsEl = document.getElementById('date-tabs');
+  const all = [{ label: 'All Dates', val: 'all' }, ...dates.map(d => ({ label: d, val: d }))];
+  tabsEl.innerHTML = all.map(t =>
+    `<button class="date-tab ${t.val === activeDate ? 'active' : ''}" data-val="${t.val}">${t.label}</button>`
+  ).join('');
+  tabsEl.querySelectorAll('.date-tab').forEach(btn => {
+    btn.onclick = () => {
+      activeDate = btn.dataset.val;
+      tabsEl.querySelectorAll('.date-tab').forEach(b => b.classList.toggle('active', b === btn));
+      renderGrid();
+    };
+  });
+
+  if (dates.length) {
+    document.getElementById('footer-dates').innerHTML =
+      `Data range: <span>${dates[dates.length-1]}</span> → <span>${dates[0]}</span>`;
+  }
+}
+
+// ── Load CSV ───────────────────────────────────────────────────────────────
+async function loadData() {
+  const wrap = document.getElementById('grid-wrap');
+  wrap.innerHTML = `<div class="state-msg"><div class="spinner"></div><p>Loading data…</p></div>`;
+
+  const paths = [
+    './data/bgmi_videos.csv',
+    '../data/bgmi_videos.csv',
+    'data/bgmi_videos.csv',
+  ];
+
+  let text = null;
+  for (const path of paths) {
+    try {
+      const res = await fetch(path);
+      if (res.ok) { text = await res.text(); break; }
+    } catch (_) {}
+  }
+
+  if (!text) {
+    wrap.innerHTML = `<div class="state-msg">
+      <div class="icon">📂</div>
+      <p>CSV Not Found</p>
+      <small>Make sure <code>data/bgmi_videos.csv</code> exists in the repo and GitHub Pages is enabled.<br/>Run the GitHub Actions workflow first to generate the file.</small>
+    </div>`;
+    document.getElementById('last-updated').textContent = 'No data loaded';
+    return;
+  }
+
+  allVideos = parseCSV(text).filter(v => v.platform === 'YouTube');
+
+  const dates = [...new Set(allVideos.map(v => v.fetched_date))].sort().reverse();
+  const latest = dates[0] || 'Unknown';
+  document.getElementById('last-updated').textContent = `Last fetch: ${latest}`;
+
+  // Default to latest date tab
+  activeDate = latest;
+  renderDateTabs();
+  // Update active tab
+  document.querySelectorAll('.date-tab').forEach(b => {
+    b.classList.toggle('active', b.dataset.val === activeDate);
+  });
+
+  renderGrid();
+}
+
+// ── Events ─────────────────────────────────────────────────────────────────
+document.getElementById('search').addEventListener('input', renderGrid);
+document.getElementById('sort').addEventListener('change', renderGrid);
+
+// ── Boot ───────────────────────────────────────────────────────────────────
+loadData();
+</script>
+</body>
+</html>
